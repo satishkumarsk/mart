@@ -1,0 +1,45 @@
+# ref: https://docs.travis-ci.com/user/languages/python
+branches:
+  only:
+    - master
+    - develop
+  except:
+    - /^build-.*$/
+language: python
+python:
+  - "2.7"
+install: "pip install -r requirements.txt"
+# command to run tests
+
+stages:
+  - unit-test
+  - code-coverage
+  - build-docker-image
+  - build-tag
+jobs:
+  include:
+    - stage: build-docker-image
+      if: type = push
+      script:
+      - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+      - docker build -t usermgmt .
+      - docker images
+      - docker tag usermgmt $DOCKER_USERNAME/usermgmt:$TRAVIS_BRANCH-v$TRAVIS_BUILD_NUMBER
+      - docker tag usermgmt $DOCKER_USERNAME/usermgmt:latest
+      - docker push $DOCKER_USERNAME/usermgmt
+    - stage: unit-test
+      script:
+      - nosetests
+    - stage: code-coverage
+      script:
+      - coverage run -m pytest  
+    - stage: build-tag
+      if: branch = master
+      script:
+      - git config --global user.email "builds@travis-ci.com"
+      - export GIT_TAG=build-$TRAVIS_BRANCH-v$TRAVIS_BUILD_NUMBER
+      - git tag $GIT_TAG -a -m "Generated tag from TravisCI build $TRAVIS_BUILD_NUMBER"
+      - git push --quiet https://$GITHUB_TOKEN@github.com/sathish006/mart  $GIT_TAG > /dev/null 2>&1
+after_success:
+  - coverage report --omit=*lib* 
+  - bash <(curl -s https://codecov.io/bash)
